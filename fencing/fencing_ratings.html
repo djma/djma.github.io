@@ -1,0 +1,81 @@
+<html>
+<head>
+  <link rel="stylesheet" type="text/css" href="../main.css">
+  <title>David Ma's handcrafted website</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <h1><a href="http://www.pointcontrol.info">PointControl</a>: a new fencing rating system</h1>
+  <p><i> A little about me &mdash; I started fencing epee in September 2014 at <a href="http://www.cobrafencing.com/">Cobra Fencing</a>. My day job involves using statistics and computing to predict how financial instruments will behave based on various sources of data. </i></p>
+
+  <p>First, of course, a short disclaimer... The following analysis is by no means definitive nor error free. Due to simplifying assumptions, time restrictions, human errors, and other data science mishaps, one must take everything below with a grain of salt.</p>
+
+  <p>Assigning a rating to players in games and sports is inherently difficult. While systems like the ELO rating, Glicko rating, Glicko-2, TrueSkill, and others all attempt in theory to model and predict wins and losses and changes in skill, in practice, the amount of data per player is small, skills change at different speeds at different times, and the pool of players change constantly.</p>
+
+  <p>The <a href="https://askfred.net/Info/eventClass.php">letter-based US fencing rating system</a> has been untouched (pun intended) for more than 50 years. It has some redeeming qualities like simplicity (no math!) and tradition. But many have <a href="http://www.fencing.net/forums/fencing-discussion/29851-fencing-ratings.html">raised</a> <a href="https://www.facebook.com/TimMorehouseUSA/posts/845271802191255">issues</a> <a href="http://www.fencing.net/forums/fencing-discussion/79203-fencing-begin-using-ratings.html">with</a> the system. Although I don't think a complete revamp from the top down is necessarily warranted, it can be fun and instructional to explore alternatives. This is made possible with <a href="http://askfred.net/">AskFred</a> and the multitude of open-source technology available today.</p>
+
+  <p>Because I'm a biased epeeist, I do all of the analysis for epee first.</p>
+
+<h2>Data profiling</h2>
+<p>The public data was collected through AskFred's api. I've downloaded all bouts, tournament results, and promotions since 2010. Although there are a lot of descriptive statistics we can go through here, I'll stick to what's important for this article.</p>
+
+  <h4>Number of bouts</h4>
+    <img src="fencing_ratings/bouts_per_month.png" alt="Bouts per month" style="width:650;">
+    <p><small>Sorry for the hideous x-axis labels. I am a noob at <a href="http://pandas.pydata.org/">pandas</a>. Please teach me how to fix it. </small></p>
+    <p>We can clearly see the off season in July and August.</p>
+  <h4>Number of bouts per fencer in a year | Tournament size distribution</h4>
+    <img src="fencing_ratings/hist_bouts_per_fenceryear.png" alt="Histogram of bouts per fencer-year" style="width:300;">
+    <img src="fencing_ratings/hist_bouts_per_event.png" alt="Histogram of bouts per tournament event" style="width:300;">
+    <p>I clipped the x-axis to ignore outliers. Some of the tournaments are pretty massive.</p>
+
+<h2>Computing a new statistical rating</h2>
+<p>For simplicity, I've chosen to use <a href="http://trueskill.org/">TrueSkill</a> to start things off. Based on a quick survey of the options, it accounted for skill uncertainty, and was easy to use. However, some of the issues include:</p>
+<ol>
+  <li>TrueSkill is patented by Microsoft</li>
+  <li>5-point bouts vs 15-point bouts</li>
+  <li>How to deal with point differentials at the end of a bout (e.g. one-touch bout vs one-sided bout)</li>
+  <li>The tournament data is only US, does not include "high-level" tournaments like nationals, and includes only tournament results reported to AskFred.</li>
+</ol>
+
+<p>Here's how I address the problems:</p>
+<ol>
+  <li>I rely on the goodwill of Microsoft to not sue me. Otherwise, I'll probably switch to Glicko-2.</li>
+  <li>For simplicity, I make the 15-point bout count twice as much as the 5-point bout. Some fencers have argued that the 5p and 15p bouts are very different in nature. I agree, and there's definitely a higher result variability in the 5p bouts, but there's undeniably a high correlation between winning a 5p and a 15p bout. In a future article, I'd be interested in experimenting with a <em>separate</em> rating for the 5p and the 15p bouts, and perhaps coming up with a better and multidimensional way to characterize a fencer's skills.</li>
+  <li>Again for simplicity, I only count win/loss/tie. This is partially motivated by discussions about the "<a href="https://www.youtube.com/watch?v=lfYxp4djCNM">one-point bout</a>", the "<a href="http://www.amazon.com/Epee-2-0-Birth-Fencing-Paradigm/dp/0978902211">olympic touch</a>", or to a lesser degree the one-touch fencing <a href="https://en.wikipedia.org/wiki/Pentathlon">pentathlon</a>.</li>
+  <li>Tough luck... but it's better than nothing.</li>
+</ol>
+
+<!-- Talk about drift -->
+<p>Each fencer starts with a default rating of 25 with a standard deviation of 8.33; those values are suggested by TrueSkill. Note that I define a fencer by their fencerid from AskFred. I make no attempt to deal with people who accidentally created more than one id. After running the algorithm from 2010-01-01 through 2015-06-31, I noticed that both the median and the average rating of an active fencer (active defined as a fencer who fenced in at least one tournament in the past 1 year) drifted down.</p>
+<img src="fencing_ratings/median_ratings_over_time.png" alt="Median ratings over time drift down linearly" style="width:300px;">
+<img src="fencing_ratings/num_active.png" alt="Number of active epeeists stabilize around 12000" style="width:300px;">
+<p>One hypothesis is that experienced fencers (usually with higher ratings) retire and drop out of the active pool. However, only the <em>difference</em> in ratings matter when comparing two fencers. Hence, I address this drift by simply adding back a constant to every fencers' rating according to time. After adjusting for that drift, comparing two different ratings across different times becomes possible.</p>
+
+<h2>Old rating (tournament letter) vs PointControl rating (statistical)</h2>
+<p>First, here is a distribution of letter ratings as of 2015-07-01. I filter out all fencers that have not fenced since 2014-06-20 from here on.</p>
+<img src="fencing_ratings/letter_bar.png" alt="" style="width:300px">
+<img src="fencing_ratings/letter_pie.png" alt="" style="width:230px">
+<p>Below I show how the letter rating compares to the PointControl rating. The lower and upper whiskers are the 5th and 95th percentiles, and the middle red bar is the median PointControl among all fencers with that rating. Obivously as a sanity check, the higher the letter rating the higher the PointControl. It is also interesting to quantitatively see the high unpredictability of fencing an unknown U fencer; you never know whether s/he is an A in disguise! But from this graph, that would happen much less than 5% of the time.</p>
+<img src="fencing_ratings/trueskill_vs_letter.png" alt="PointControl vs Letter rating" style="width:500px">
+<p> Here, I show what the PointControl rating of the fencer right after a traditional letter rating promotion. I also highlighted in green all the "one step" promotions. This also suggests that the skill gap between achieving an E>D>C>B>A gets progressively larger.</p>
+<img src="fencing_ratings/trueskill_at_time_of_promotion.png" alt="PointControl at time of promotion" style="width:400px">
+<img src="fencing_ratings/trueskill_diff_for_next_promotion.png" alt="PointControl at time of promotion" style="width:150px">
+
+<h2>Putting it to the test...</h2>
+<p>Finally, we must evaluate if the PointControl rating is any better at predicting tournament outcomes than letters. Given a tournament event result ranking, I compute a <a href="https://en.wikipedia.org/wiki/Kendall_rank_correlation_coefficient">Kendall Tau</a> (specifically Tau-b to handle tied rankings) against the PointControl ranking and the letter ranking of the participants <em>prior</em> to the tournament. For letter-years rankings, I rank more recent years higher than earlier years. I do this for all epee events that happened between 2014-06-20 and 2015-06-31 and plot a histogram of the Tau's achieved by PointControl vs Letter.</p> 
+<p>I also replicate the effect of random seeding of fencers with the same letter-year rating (right histogram).</p> 
+<img src="fencing_ratings/kendall_letter_vs_trueskill.png" alt="PointControl rating's Kendall Tau is higher than Letter rating's" style="width:300px">
+<img src="fencing_ratings/kendall_letter_vs_trueskill_jittered.png" alt="PointControl rating's Kendall Tau is higher than Letter rating's" style="width:300px">
+<p><small>A Tau of -1 signifies the predicted ranking perfectly reversed the order of the actual final ranking. A Tau of 0 signifies a ranking no better than a random ranking on average. A Tau of 1 signifies a perfect prediction of the ranking.</small></p>
+<p>It turns out, there are a lot of small U-only tournaments and the letter based rating will make no prediction and the seeding will be totally random, thus leading to a zero Tau. PointControl can definitely add some predictive value here.</p>
+<p>But what if we ignore those events, is PointControl still more predictive?</p>
+<img src="fencing_ratings/kendall_letter_vs_trueskill_filtered2.png" alt="" style="width:300px">
+<img src="fencing_ratings/kendall_letter_vs_trueskill_filtered.png" alt="" style="width:300px">
+<p>The difference is small, but one can still see that the blue histogram is slightly more to the right. We can compute means, medians, and t-test. Of course, tournament events are of different size. Intuitively I should weight the prediction results of larger tournaments higher than smaller tournaments. I can weight the tournaments by the number of fencers. Or, I can weight by the <a href="https://en.wikipedia.org/wiki/Comparison_sort#Number_of_comparisons_required_to_sort_a_list">minimum amount of comparisons to determine a total order</a>, which is O(n log(n)) where n is the number of fencer. So I report the median, unweighted, n weighted, and n log(n) weighted means of the Tau's.</p>
+<img src="fencing_ratings/kendall_table.png" alt="" style="width:650px">
+<p><small><a href="http://www.scipy.org/">SciPy</a> doesn't seem to offer a weighted version of the paired t-test. But results are self evident enough to ommit this test.</small></p>
+<p>In the end, no matter how we look at the results. It is clear that PointControl is more predictive of tournament event results than the curent Letter-based rating. I've also shown that it is possible to simply use AskFred's API to implement a historical and on-going PointControl system. Whether the USFA adopts this model or not, this new system is available for public use at <a href="http://www.pointcontrol.info">PointControl</a>.</p>
+  <p><i>Last updated 2015-09-15.</i></p>
+
+</body>
+</html>
